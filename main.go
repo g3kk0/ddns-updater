@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/davecgh/go-spew/spew"
@@ -17,39 +16,33 @@ func main() {
 		log.Fatal(err)
 	}
 
-	resp, err := dnsService.ManagedZones.Get(project, managedZone).Context(ctx).Do()
+	//resp, err := dnsService.ManagedZones.Get("crack-braid-160020", "mkzd-host").Context(ctx).Do()
+
+	// Get record
+	//resp, err := dnsService.ResourceRecordSets.List("crack-braid-160020", "mkzd-host").Context(ctx).Do()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// Update record
+	change := dns.Change{
+		Additions: []*dns.ResourceRecordSet{
+			&dns.ResourceRecordSet{
+				Kind: "dns#resourceRecordSet",
+				Name: "foo.mkzd.host.",
+				Rrdatas: []string{
+					"1.2.3.4",
+				},
+				Ttl:  86400,
+				Type: "A",
+			},
+		},
+	}
+
+	resp, err := dnsService.Changes.Create("crack-braid-160020", "mkzd-host", &change).Context(ctx).Do()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	//fmt.Printf("dnsService.ManagedZones = %+v\n", dnsService.ManagedZones)
-
 	spew.Dump(resp)
-
-	// ctx := context.Background()
-
-	// c, err := google.DefaultClient(ctx, dns.CloudPlatformScope)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// dnsService, err := dns.New(c)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// // Identifies the project addressed by this request.
-	// project := "my-project" // TODO: Update placeholder value.
-
-	// // Identifies the managed zone addressed by this request. Can be the managed zone name or id.
-	// managedZone := "my-managed-zone" // TODO: Update placeholder value.
-
-	// resp, err := dnsService.ManagedZones.Get(project, managedZone).Context(ctx).Do()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// // TODO: Change code below to process the `resp` object:
-	// fmt.Printf("%#v\n", resp)
-	fmt.Println("done")
 }
