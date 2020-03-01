@@ -8,45 +8,55 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/davecgh/go-spew/spew"
 	"google.golang.org/api/dns/v1"
 )
 
+var errNotFound = errors.New("record not found")
+
 func main() {
+	//project := os.Getenv("PROJECT")
+	//record := os.Getenv("RECORD")
+	//zone := os.Getenv("ZONE")
 	project := "crack-braid-160020"
 	record := "foo.mkzd.host"
 	zone := "mkzd-host"
 
 	dnsService, err := newDnsService(project)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
-	dnsIp, err := dnsService.getRecordValue(record, zone)
+	dnsIp, err := dnsService.getRecordValue(zone, record)
 	if err != nil {
-		log.Fatal(err)
+		switch err {
+		case errNotFound:
+			log.Println(errNotFound)
+		default:
+			log.Println(err)
+		}
 	}
 
 	currentIp, err := getIpAddress()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	if dnsIp != currentIp {
 		fmt.Println("updating DNS record")
+		if dnsIp != "" {
+			err := dnsService.deleteRecord(zone, record, dnsIp)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+
+		err = dnsService.updateRecord(zone, record, currentIp)
+		if err != nil {
+			log.Println(err)
+		}
 	} else {
-		fmt.Println("DNS record is in sync")
+		fmt.Println("record already up to date")
 	}
-
-	//fmt.Printf("ip = %+v\n", ip)
-
-	// fetch ip
-	// check
-
-	//dnsService.updateRecord("foo", "bar")
-
-	// fmt.Printf("ip = %+v\n", ip)
-
 }
 
 type dnsService struct {
@@ -71,7 +81,7 @@ func newDnsService(project string) (*dnsService, error) {
 	return dnsService, nil
 }
 
-func (s *dnsService) getRecordValue(record, zone string) (string, error) {
+func (s *dnsService) getRecordValue(zone, record string) (string, error) {
 	resp, err := s.client.ResourceRecordSets.List(s.project, zone).Context(s.ctx).Do()
 	if err != nil {
 		return "", err
@@ -85,33 +95,54 @@ func (s *dnsService) getRecordValue(record, zone string) (string, error) {
 	}
 
 	if ip == "" {
-		return "", errors.New("unable to find value in record")
+		return "", errNotFound
 	}
 
 	return ip, nil
 }
 
-func (s *dnsService) updateRecord(name, ip string) error {
+func (s *dnsService) deleteRecord(zone, record, ip string) error {
 	change := dns.Change{
-		Additions: []*dns.ResourceRecordSet{
+		Deletions: []*dns.ResourceRecordSet{
 			&dns.ResourceRecordSet{
 				Kind: "dns#resourceRecordSet",
-				Name: "foo.mkzd.host.",
+				Name: record + ".",
 				Rrdatas: []string{
-					"1.2.3.4",
+					ip,
 				},
-				Ttl:  86400,
+				Ttl:  300,
 				Type: "A",
 			},
 		},
 	}
 
-	resp, err := s.client.Changes.Create("crack-braid-160020", "mkzd-host", &change).Context(s.ctx).Do()
+	_, err := s.client.Changes.Create(s.project, zone, &change).Context(s.ctx).Do()
 	if err != nil {
 		return err
 	}
 
-	spew.Dump(resp)
+	return nil
+}
+
+func (s *dnsService) updateRecord(zone, record, ip string) error {
+	change := dns.Change{
+		Additions: []*dns.ResourceRecordSet{
+			&dns.ResourceRecordSet{
+				Kind: "dns#resourceRecordSet",
+				Name: record + ".",
+				Rrdatas: []string{
+					ip,
+				},
+				Ttl:  300,
+				Type: "A",
+			},
+		},
+	}
+
+	_, err := s.client.Changes.Create(s.project, zone, &change).Context(s.ctx).Do()
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
