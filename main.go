@@ -3,69 +3,87 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
+	"time"
 
 	"google.golang.org/api/dns/v1"
 )
 
-var errNotFound = errors.New("record not found")
+var errNotFound = errors.New("DNS record not found")
 
 func main() {
-	//project := os.Getenv("PROJECT")
-	//record := os.Getenv("RECORD")
-	//zone := os.Getenv("ZONE")
-	project := "crack-braid-160020"
-	record := "foo.mkzd.host"
-	zone := "mkzd-host"
+	googleProjectId := os.Getenv("GOOGLE_PROJECT_ID")
+	dnsRecord := os.Getenv("DNS_RECORD")
+	dnsZone := os.Getenv("DNS_ZONE")
+	checkInterval := os.Getenv("CHECK_INTERVAL")
 
-	dnsService, err := newDnsService(project)
+	if checkInterval == "" {
+		checkInterval = "3600"
+	}
+
+	dnsService, err := newDnsService(googleProjectId)
 	if err != nil {
 		log.Println(err)
 	}
 
-	dnsIp, err := dnsService.getRecordValue(zone, record)
-	if err != nil {
-		switch err {
-		case errNotFound:
-			log.Println(errNotFound)
-		default:
-			log.Println(err)
-		}
-	}
+	log.Println("Starting ddns-updater...")
+	log.Printf("Check interval = %s\n", checkInterval)
 
-	currentIp, err := getIpAddress()
-	if err != nil {
-		log.Println(err)
-	}
-
-	if dnsIp != currentIp {
-		fmt.Println("updating DNS record")
-		if dnsIp != "" {
-			err := dnsService.deleteRecord(zone, record, dnsIp)
-			if err != nil {
+	for {
+		dnsIp, err := dnsService.getRecordValue(dnsZone, dnsRecord)
+		if err != nil {
+			switch err {
+			case errNotFound:
+				log.Println(errNotFound)
+			default:
 				log.Println(err)
 			}
 		}
 
-		err = dnsService.updateRecord(zone, record, currentIp)
+		currentIp, err := getIpAddress()
 		if err != nil {
 			log.Println(err)
 		}
-	} else {
-		fmt.Println("record already up to date")
+
+		if dnsIp != currentIp {
+			log.Printf("Updating DNS record %s with IP %s\n", dnsRecord, currentIp)
+			if dnsIp != "" {
+				err := dnsService.deleteRecord(dnsZone, dnsRecord, dnsIp)
+				if err != nil {
+					log.Println(err)
+				}
+			}
+
+			err = dnsService.updateRecord(dnsZone, dnsRecord, currentIp)
+			if err != nil {
+				log.Println(err)
+			} else {
+				log.Println("DNS record sucessfully updated")
+			}
+		} else {
+			log.Printf("DNS record up to date (%s -> %s)\n", dnsRecord, currentIp)
+		}
+
+		interval, err := strconv.Atoi(checkInterval)
+		if err != nil {
+			log.Println(err)
+		}
+
+		time.Sleep(time.Duration(interval) * time.Second)
 	}
 }
 
 type dnsService struct {
-	ctx     context.Context
-	client  *dns.Service
-	project string
+	ctx       context.Context
+	client    *dns.Service
+	projectId string
 }
 
-func newDnsService(project string) (*dnsService, error) {
+func newDnsService(projectId string) (*dnsService, error) {
 	ctx := context.Background()
 	client, err := dns.NewService(ctx)
 	if err != nil {
@@ -73,23 +91,23 @@ func newDnsService(project string) (*dnsService, error) {
 	}
 
 	dnsService := &dnsService{
-		ctx:     ctx,
-		client:  client,
-		project: project,
+		ctx:       ctx,
+		client:    client,
+		projectId: projectId,
 	}
 
 	return dnsService, nil
 }
 
 func (s *dnsService) getRecordValue(zone, record string) (string, error) {
-	resp, err := s.client.ResourceRecordSets.List(s.project, zone).Context(s.ctx).Do()
+	resp, err := s.client.ResourceRecordSets.List(s.projectId, zone).Context(s.ctx).Do()
 	if err != nil {
 		return "", err
 	}
 
 	var ip string
 	for _, v := range resp.Rrsets {
-		if v.Name == record+"." {
+		if v.Name == record+"." && v.Type == "A" {
 			ip = v.Rrdatas[0]
 		}
 	}
@@ -116,7 +134,7 @@ func (s *dnsService) deleteRecord(zone, record, ip string) error {
 		},
 	}
 
-	_, err := s.client.Changes.Create(s.project, zone, &change).Context(s.ctx).Do()
+	_, err := s.client.Changes.Create(s.projectId, zone, &change).Context(s.ctx).Do()
 	if err != nil {
 		return err
 	}
@@ -139,7 +157,7 @@ func (s *dnsService) updateRecord(zone, record, ip string) error {
 		},
 	}
 
-	_, err := s.client.Changes.Create(s.project, zone, &change).Context(s.ctx).Do()
+	_, err := s.client.Changes.Create(s.projectId, zone, &change).Context(s.ctx).Do()
 	if err != nil {
 		return err
 	}
