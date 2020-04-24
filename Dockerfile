@@ -4,7 +4,7 @@ WORKDIR /build
 
 COPY . .
 
-RUN GCO_ENABLED=0 GOOS=linux go build -o ddns-updater
+RUN CGO_ENABLED=0 GOOS=linux go build -o ddns-updater
 
 
 FROM alpine:latest
