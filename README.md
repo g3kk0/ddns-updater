@@ -8,13 +8,14 @@ Dynamic DNS updater for Google Cloud DNS.
 
 ## Usage
 
-Download the latest version
+Build the binary
 ```
-curl xxx -o /usr/local/bin/
-chmod +x /usr/local/bin/ddns-updater
+git clone https://github.com/g3kk0/ddns-updater.git
+cd ddns-updater
+go build
 ```
 
-Set the appropriate environment variables and run the tool
+Set the appropriate environment variables and run the binary
 ```
 export GOOGLE_APPLICATION_CREDENTIALS="sa.json"
 export GOOGLE_PROJECT_ID="foo-bar-12345678"

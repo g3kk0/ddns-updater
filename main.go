@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,25 +17,26 @@ import (
 var errNotFound = errors.New("DNS record not found")
 
 func main() {
-	googleProjectId := os.Getenv("GOOGLE_PROJECT_ID")
-	dnsRecord := os.Getenv("DNS_RECORD")
-	dnsZone := os.Getenv("DNS_ZONE")
-	checkInterval := os.Getenv("CHECK_INTERVAL")
-
-	if checkInterval == "" {
-		checkInterval = "3600"
-	}
-
-	dnsService, err := newDnsService(googleProjectId)
+	err := run()
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	config := loadConfig()
+
+	dnsService, err := newDnsService(config.googleProjectId)
+	if err != nil {
+		return err
 	}
 
 	log.Println("Starting ddns-updater...")
-	log.Printf("Check interval = %s\n", checkInterval)
+	log.Printf("Check interval = %s\n", config.checkInterval)
 
 	for {
-		dnsIp, err := dnsService.getRecordValue(dnsZone, dnsRecord)
+		dnsIp, err := dnsService.getRecordValue(config.dnsZone, config.dnsRecord)
 		if err != nil {
 			switch err {
 			case errNotFound:
@@ -50,31 +52,53 @@ func main() {
 		}
 
 		if dnsIp != currentIp {
-			log.Printf("Updating DNS record %s with IP %s\n", dnsRecord, currentIp)
+			log.Printf("Updating DNS record %s with IP %s\n", config.dnsRecord, currentIp)
 			if dnsIp != "" {
-				err := dnsService.deleteRecord(dnsZone, dnsRecord, dnsIp)
+				err := dnsService.deleteRecord(config.dnsZone, config.dnsRecord, dnsIp)
 				if err != nil {
 					log.Println(err)
 				}
 			}
 
-			err = dnsService.updateRecord(dnsZone, dnsRecord, currentIp)
+			err = dnsService.updateRecord(config.dnsZone, config.dnsRecord, currentIp)
 			if err != nil {
 				log.Println(err)
 			} else {
 				log.Println("DNS record sucessfully updated")
 			}
 		} else {
-			log.Printf("DNS record up to date (%s -> %s)\n", dnsRecord, currentIp)
+			log.Printf("DNS record up to date (%s -> %s)\n", config.dnsRecord, currentIp)
 		}
 
-		interval, err := strconv.Atoi(checkInterval)
+		interval, err := strconv.Atoi(config.checkInterval)
 		if err != nil {
 			log.Println(err)
 		}
 
 		time.Sleep(time.Duration(interval) * time.Second)
 	}
+}
+
+type config struct {
+	googleProjectId string
+	dnsRecord       string
+	dnsZone         string
+	checkInterval   string
+}
+
+func loadConfig() *config {
+	config := &config{}
+
+	config.googleProjectId = os.Getenv("GOOGLE_PROJECT_ID")
+	config.dnsRecord = os.Getenv("DNS_RECORD")
+	config.dnsZone = os.Getenv("DNS_ZONE")
+	config.checkInterval = os.Getenv("CHECK_INTERVAL")
+
+	if config.checkInterval == "" {
+		config.checkInterval = "3600"
+	}
+
+	return config
 }
 
 type dnsService struct {
